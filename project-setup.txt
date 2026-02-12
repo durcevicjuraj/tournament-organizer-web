@@ -1,0 +1,4 @@
+brew install supabase/tap/supabase
+supabase login
+supabase init
+supabase link
