@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useTournament } from '../hooks/useTournament'
 
+const PHASE_ORDER = ['group', 'round_of_32', 'round_of_16', 'quarter_final', 'semi_final', 'final']
+
 export default function TournamentMatchesPending() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -34,7 +36,8 @@ export default function TournamentMatchesPending() {
   const pendingMatches = matches.filter(m => m.status === 'pending')
   const completedMatches = matches.filter(m => m.status === 'completed')
 
-  const getParticipantName = (participantId: string) => {
+  const getParticipantName = (participantId: string | null) => {
+    if (!participantId) return 'TBD'
     const p = participants.find(p => p.id === participantId)
     return p?.teams?.name || p?.profiles?.username || 'TBD'
   }
@@ -43,13 +46,25 @@ export default function TournamentMatchesPending() {
     return phase.replace(/_/g, ' ').toUpperCase()
   }
 
+  const isTBD = (match: any) => !match.participant1_id || !match.participant2_id
+
+  const groupMatchesByPhase = (matchList: any[]) => {
+    const grouped: Record<string, any[]> = {}
+    matchList.forEach(m => {
+      if (!grouped[m.phase]) grouped[m.phase] = []
+      grouped[m.phase].push(m)
+    })
+    const sorted: Record<string, any[]> = {}
+    PHASE_ORDER.forEach(phase => {
+      if (grouped[phase]) sorted[phase] = grouped[phase]
+    })
+    return sorted
+  }
+
   const handleScoreChange = (matchId: string, field: 'score1' | 'score2', value: string) => {
     setScores(prev => ({
       ...prev,
-      [matchId]: {
-        ...prev[matchId],
-        [field]: value
-      }
+      [matchId]: { ...prev[matchId], [field]: value }
     }))
   }
 
@@ -105,6 +120,9 @@ export default function TournamentMatchesPending() {
 
   const knockoutExists = matches.some(m => m.phase !== 'group')
 
+  const groupedPending = groupMatchesByPhase(pendingMatches)
+  const groupedCompleted = groupMatchesByPhase(completedMatches)
+
   return (
     <div className="max-w-4xl mx-auto p-8 flex flex-col gap-8">
 
@@ -128,62 +146,73 @@ export default function TournamentMatchesPending() {
 
       {/* Pending Matches */}
       {isCreator && pendingMatches.length > 0 && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-6">
           <h2 className="text-xl font-semibold">Pending Matches</h2>
-          {pendingMatches.map((match) => (
-            <div key={match.id} className="card bg-base-200">
-              <div className="card-body">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="badge badge-outline">{getPhaseLabel(match.phase)}</span>
-                  <span className="badge badge-warning">Pending</span>
-                </div>
+          {Object.entries(groupedPending).map(([phase, phaseMatches]) => (
+            <div key={phase} className="flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-base-content/60 uppercase tracking-wider">
+                {getPhaseLabel(phase)}
+              </h3>
+              {phaseMatches.map((match) => {
+                const tbd = isTBD(match)
+                return (
+                  <div key={match.id} className={`card bg-base-200 ${tbd ? 'opacity-50' : ''}`}>
+                    <div className="card-body">
+                      {tbd && (
+                        <div className="alert alert-warning py-2 mb-2">
+                          <span className="text-sm">Waiting for previous round results</span>
+                        </div>
+                      )}
 
-                <div className="flex items-center gap-4">
-                  <span className="flex-1 text-right font-medium">
-                    {getParticipantName(match.participant1_id)}
-                  </span>
+                      <div className="flex flex-col items-center gap-4">
+                        <div className="flex items-center gap-4">
+                          <span className="w-40 text-right font-medium">
+                            {getParticipantName(match.participant1_id)}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="0"
+                              value={scores[match.id]?.score1 ?? '0'}
+                              onChange={(e) => handleScoreChange(match.id, 'score1', e.target.value)}
+                              disabled={tbd}
+                              className="input input-bordered w-16 text-center"
+                            />
+                            <span className="text-base-content/60">-</span>
+                            <input
+                              type="number"
+                              min="0"
+                              placeholder="0"
+                              value={scores[match.id]?.score2 ?? '0'}
+                              onChange={(e) => handleScoreChange(match.id, 'score2', e.target.value)}
+                              disabled={tbd}
+                              className="input input-bordered w-16 text-center"
+                            />
+                          </div>
+                          <span className="w-40 font-medium">
+                            {getParticipantName(match.participant2_id)}
+                          </span>
+                        </div>
 
-                  <div className="flex items-center gap-2">
-                   <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={scores[match.id]?.score1 ?? '0'}
-                      onChange={(e) => handleScoreChange(match.id, 'score1', e.target.value)}
-                      className="input input-bordered w-16 text-center"
-                    />
-                    <span className="text-base-content/60">-</span>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={scores[match.id]?.score2 ?? '0'}
-                      onChange={(e) => handleScoreChange(match.id, 'score2', e.target.value)}
-                      className="input input-bordered w-16 text-center"
-                    />
+                        {error[match.id] && (
+                          <div className="alert alert-error py-2">
+                            <span>{error[match.id]}</span>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => handleSubmit(match.id)}
+                          disabled={submitting === match.id || tbd}
+                          className="btn btn-primary btn-sm"
+                        >
+                          {submitting === match.id ? <span className="loading loading-spinner loading-xs"></span> : 'Submit Result'}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-
-                  <span className="flex-1 font-medium">
-                    {getParticipantName(match.participant2_id)}
-                  </span>
-                </div>
-
-                {error[match.id] && (
-                  <div className="alert alert-error mt-2">
-                    <span>{error[match.id]}</span>
-                  </div>
-                )}
-
-                <div className="flex justify-end mt-4">
-                  <button
-                    onClick={() => handleSubmit(match.id)}
-                    disabled={submitting === match.id}
-                    className="btn btn-primary btn-sm"
-                  >
-                    {submitting === match.id ? <span className="loading loading-spinner loading-xs"></span> : 'Submit Result'}
-                  </button>
-                </div>
-              </div>
+                )
+              })}
             </div>
           ))}
         </div>
@@ -191,31 +220,36 @@ export default function TournamentMatchesPending() {
 
       {/* Completed Matches */}
       {completedMatches.length > 0 && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-6">
           <h2 className="text-xl font-semibold">Completed Matches</h2>
-          {completedMatches.map((match) => {
-            const p1 = participants.find(p => p.id === match.participant1_id)
-            const p2 = participants.find(p => p.id === match.participant2_id)
-            return (
-              <div key={match.id} className="card bg-base-200 opacity-75">
-                <div className="card-body py-4">
-                  <div className="flex items-center justify-between">
-                    <span className="badge badge-outline">{getPhaseLabel(match.phase)}</span>
-                    <div className="flex items-center gap-4 text-lg">
-                      <span className={match.winner_id === match.participant1_id ? 'text-success font-bold' : 'text-base-content/60'}>
-                        {p1?.teams?.name || p1?.profiles?.username}
-                      </span>
-                      <span className="font-bold">{match.score1} - {match.score2}</span>
-                      <span className={match.winner_id === match.participant2_id ? 'text-success font-bold' : 'text-base-content/60'}>
-                        {p2?.teams?.name || p2?.profiles?.username}
-                      </span>
+          {Object.entries(groupedCompleted).map(([phase, phaseMatches]) => (
+            <div key={phase} className="flex flex-col gap-3">
+              <h3 className="text-sm font-semibold text-base-content/60 uppercase tracking-wider">
+                {getPhaseLabel(phase)}
+              </h3>
+              {phaseMatches.map((match) => {
+                const p1 = participants.find(p => p.id === match.participant1_id)
+                const p2 = participants.find(p => p.id === match.participant2_id)
+                return (
+                  <div key={match.id} className="card bg-base-200 opacity-75">
+                    <div className="card-body py-4">
+                      <div className="grid grid-cols-3 items-center">
+                        <span className={`text-right font-medium ${match.winner_id === match.participant1_id ? 'text-success font-bold' : 'text-base-content/60'}`}>
+                          {p1?.teams?.name || p1?.profiles?.username}
+                        </span>
+                        <span className="text-center font-bold">
+                          {match.score1} - {match.score2}
+                        </span>
+                        <span className={`font-medium ${match.winner_id === match.participant2_id ? 'text-success font-bold' : 'text-base-content/60'}`}>
+                          {p2?.teams?.name || p2?.profiles?.username}
+                        </span>
+                      </div>
                     </div>
-                    <span className="badge badge-success">Completed</span>
                   </div>
-                </div>
-              </div>
-            )
-          })}
+                )
+              })}
+            </div>
+          ))}
         </div>
       )}
 

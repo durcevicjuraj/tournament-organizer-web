@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { Link } from 'react-router-dom'
+import { getData } from 'country-list'
 
 interface Team {
   id: string
@@ -17,6 +18,7 @@ interface Game {
 }
 
 const TEAMS_PER_PAGE = 10
+const allCountries = getData().sort((a, b) => a.name.localeCompare(b.name))
 
 export default function Teams() {
   const [ownedTeams, setOwnedTeams] = useState<Team[]>([])
@@ -28,7 +30,22 @@ export default function Teams() {
 
   const [searchName, setSearchName] = useState('')
   const [searchGame, setSearchGame] = useState('')
+  const [selectedCountries, setSelectedCountries] = useState<string[]>([])
+  const [countrySearch, setCountrySearch] = useState('')
+  const [countryDropdownOpen, setCountryDropdownOpen] = useState(false)
   const [page, setPage] = useState(1)
+
+  const countryDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (countryDropdownRef.current && !countryDropdownRef.current.contains(e.target as Node)) {
+        setCountryDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -36,30 +53,15 @@ export default function Teams() {
       if (!user) return
 
       const [owned, member, all, gamesData] = await Promise.all([
-        supabase
-          .from('teams')
-          .select('*, games(id, name)')
-          .eq('created_by', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('team_members')
-          .select('teams(*, games(id, name))')
-          .eq('player_id', user.id),
-        supabase
-          .from('teams')
-          .select('*, games(id, name)')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('games')
-          .select('id, name')
-          .order('name')
+        supabase.from('teams').select('*, games(id, name)').eq('created_by', user.id).order('created_at', { ascending: false }),
+        supabase.from('team_members').select('teams(*, games(id, name))').eq('player_id', user.id),
+        supabase.from('teams').select('*, games(id, name)').order('created_at', { ascending: false }),
+        supabase.from('games').select('id, name').order('name')
       ])
 
       if (owned.data) setOwnedTeams(owned.data)
       if (member.data) {
-        const teams = member.data
-          .map((m: any) => m.teams)
-          .filter(Boolean)
+        const teams = member.data.map((m: any) => m.teams).filter(Boolean)
         setMemberTeams(teams)
       }
       if (all.data) setAllTeams(all.data)
@@ -71,10 +73,22 @@ export default function Teams() {
     fetchData()
   }, [])
 
+  const toggleCountry = (name: string) => {
+    setSelectedCountries(prev =>
+      prev.includes(name) ? prev.filter(c => c !== name) : [...prev, name]
+    )
+    setPage(1)
+  }
+
+  const filteredCountries = allCountries.filter(c =>
+    c.name.toLowerCase().includes(countrySearch.toLowerCase())
+  )
+
   const filterTeams = (teams: Team[]) => {
     return teams.filter(t =>
       t.name.toLowerCase().includes(searchName.toLowerCase()) &&
-      (searchGame === '' || t.games?.id === searchGame)
+      (searchGame === '' || t.games?.id === searchGame) &&
+      (selectedCountries.length === 0 || (t.country !== null && selectedCountries.includes(t.country)))
     )
   }
 
@@ -83,6 +97,8 @@ export default function Teams() {
     setPage(1)
     setSearchName('')
     setSearchGame('')
+    setSelectedCountries([])
+    setCountrySearch('')
   }
 
   const currentTeams = tab === 'owned' ? ownedTeams : tab === 'member' ? memberTeams : allTeams
@@ -126,24 +142,95 @@ export default function Teams() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4">
-        <input
-          type="text"
-          placeholder="Search by name..."
-          value={searchName}
-          onChange={(e) => { setSearchName(e.target.value); setPage(1) }}
-          className="input input-bordered flex-1"
-        />
-        <select
-          value={searchGame}
-          onChange={(e) => { setSearchGame(e.target.value); setPage(1) }}
-          className="select select-bordered w-48"
-        >
-          <option value="">All Games</option>
-          {games.map(g => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-4">
+          <input
+            type="text"
+            placeholder="Search by name..."
+            value={searchName}
+            onChange={(e) => { setSearchName(e.target.value); setPage(1) }}
+            className="input input-bordered flex-1"
+          />
+          <select
+            value={searchGame}
+            onChange={(e) => { setSearchGame(e.target.value); setPage(1) }}
+            className="select select-bordered w-48"
+          >
+            <option value="">All Games</option>
+            {games.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Country dropdown */}
+        <div className="relative" ref={countryDropdownRef}>
+          <div
+            className="input input-bordered w-full flex items-center justify-between cursor-pointer"
+            onClick={() => setCountryDropdownOpen(!countryDropdownOpen)}
+          >
+            <span className={selectedCountries.length === 0 ? 'text-base-content/40' : ''}>
+              {selectedCountries.length === 0 ? 'Filter by country...' : `${selectedCountries.length} country selected`}
+            </span>
+            <span className={`transition-transform duration-200 ${countryDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
+          </div>
+          {countryDropdownOpen && (
+            <div className="absolute z-50 w-full bg-base-200 border border-base-300 rounded-lg mt-1 shadow-lg">
+              <div className="p-2">
+                <input
+                  type="text"
+                  placeholder="Search countries..."
+                  value={countrySearch}
+                  onChange={(e) => setCountrySearch(e.target.value)}
+                  className="input input-bordered input-sm w-full"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+              {selectedCountries.length > 0 && (
+                <div className="px-2 pb-1">
+                  <button
+                    onClick={() => { setSelectedCountries([]); setPage(1) }}
+                    className="btn btn-ghost btn-xs text-error"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+              <div className="max-h-48 overflow-y-auto">
+                {filteredCountries.map(c => (
+                  <label
+                    key={c.code}
+                    className="flex items-center gap-2 px-3 py-2 hover:bg-base-300 cursor-pointer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCountries.includes(c.name)}
+                      onChange={() => toggleCountry(c.name)}
+                      className="checkbox checkbox-primary checkbox-sm"
+                    />
+                    <span className="text-sm">{c.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Selected country badges */}
+        {selectedCountries.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {selectedCountries.map(c => (
+              <span
+                key={c}
+                className="badge badge-primary gap-1 cursor-pointer"
+                onClick={() => toggleCountry(c)}
+              >
+                {c} ✕
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Teams List */}
@@ -152,7 +239,7 @@ export default function Teams() {
           <div className="hero-content text-center">
             <div>
               <h2 className="text-xl font-semibold mb-2">No teams found</h2>
-              {tab === 'owned' && searchName === '' && searchGame === '' && (
+              {tab === 'owned' && searchName === '' && searchGame === '' && selectedCountries.length === 0 && (
                 <Link to="/teams/create" className="btn btn-primary mt-4">
                   Create Team
                 </Link>

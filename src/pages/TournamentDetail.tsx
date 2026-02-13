@@ -34,6 +34,15 @@ export default function TournamentDetail() {
   const acceptedCount = participants.filter(p => p.status === 'accepted').length
   const allSpotsTaken = acceptedCount === expectedParticipants
 
+  const getStatusBadge = () => {
+    switch (tournament.status) {
+      case 'completed': return 'badge-success'
+      case 'ongoing': return 'badge-primary'
+      case 'draft': return 'badge-ghost'
+      default: return 'badge-warning'
+    }
+  }
+
   const handleStartTournament = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     const { error } = await supabase.rpc('start_tournament', {
@@ -59,27 +68,37 @@ export default function TournamentDetail() {
 
       {/* Header */}
       <div className="flex justify-between items-start">
-        <div>
+        <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-bold">{tournament.name}</h1>
-          <p className="text-base-content/60 mt-1">
+          <p className="text-base-content/60">
             {tournament.games?.name} · Created by {tournament.profiles?.username}
           </p>
-        </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-2">
-            <span className="badge badge-lg">{tournament.current_phase}</span>
-            <span className="badge badge-lg badge-primary">{tournament.status}</span>
+          <div className="flex gap-2 mt-1">
+            <span className={`badge badge-lg ${getStatusBadge()}`}>
+              {tournament.status}
+            </span>
+            {tournament.status !== 'completed' && (
+              <span className="badge badge-lg badge-outline">
+                {tournament.current_phase}
+              </span>
+            )}
+            <span className="badge badge-lg badge-outline">
+              {tournament.participant_type}
+            </span>
           </div>
-          <Link to={`/tournaments/${tournament.id}/matches`} className="btn btn-outline btn-sm">
-              Matches
-            </Link>
+        </div>
+
+        <div className="flex flex-col items-end gap-2">
+          <Link to={`/tournaments/${tournament.id}/matches`} className="btn btn-outline btn-sm w-full">
+            Matches
+          </Link>
           {isCreator && tournament.status === 'draft' && allSpotsTaken && (
-            <button onClick={handleStartTournament} className="btn btn-success">
+            <button onClick={handleStartTournament} className="btn btn-success btn-sm w-full">
               Start Tournament
             </button>
           )}
           {isCreator && (
-            <button onClick={handleDeleteTournament} className="btn btn-error btn-sm">
+            <button onClick={handleDeleteTournament} className="btn btn-error btn-sm w-full">
               Delete Tournament
             </button>
           )}
@@ -200,14 +219,14 @@ export default function TournamentDetail() {
                         const p1 = participants.find(p => p.id === match.participant1_id)
                         const p2 = participants.find(p => p.id === match.participant2_id)
                         return (
-                          <div key={match.id} className="flex items-center justify-between bg-base-300 p-2 rounded">
-                            <span className={match.winner_id === match.participant1_id ? 'text-success font-bold' : ''}>
+                          <div key={match.id} className="grid grid-cols-3 items-center bg-base-300 p-2 rounded">
+                            <span className={`truncate ${match.winner_id === match.participant1_id ? 'text-success font-bold' : ''}`}>
                               {p1?.teams?.name || p1?.profiles?.username}
                             </span>
-                            <span className="text-base-content/60 text-sm">
+                            <span className="text-base-content/60 text-sm text-center">
                               {match.status === 'completed' ? `${match.score1} - ${match.score2}` : 'vs'}
                             </span>
-                            <span className={match.winner_id === match.participant2_id ? 'text-success font-bold' : ''}>
+                            <span className={`truncate text-right ${match.winner_id === match.participant2_id ? 'text-success font-bold' : ''}`}>
                               {p2?.teams?.name || p2?.profiles?.username}
                             </span>
                           </div>
