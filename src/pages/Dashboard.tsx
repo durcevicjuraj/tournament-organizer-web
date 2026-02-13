@@ -80,10 +80,10 @@ export default function Dashboard() {
                   <p className="text-base-content/60 text-sm mt-1">
                     {t.games?.name} · Created by {t.profiles?.username}
                   </p>
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className={getStatusBadge(t.status)}>{t.status}</span>
-                  <span className="badge badge-outline">{t.participant_type}</span>
+                  <div className="flex gap-2 mt-2">
+                    <span className={getStatusBadge(t.status)}>{t.status}</span>
+                    <span className="badge badge-outline">{t.participant_type}</span>
+                  </div>
                 </div>
               </div>
             </Link>
